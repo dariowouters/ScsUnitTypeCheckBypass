@@ -7,7 +7,6 @@
 #include "scssdk_telemetry.h"
 
 uintptr_t g_attribute_type_check_address = NULL;
-uintptr_t game_base;
 
 scs_log_t scs_log = nullptr;
 
@@ -59,8 +58,17 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
     const auto version_params = reinterpret_cast<const scs_telemetry_init_params_v101_t*>(params);
     scs_log = version_params->common.log;
 
+    const auto game_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+    const auto header = reinterpret_cast<const IMAGE_DOS_HEADER*>(game_base);
+    const auto nt_header = reinterpret_cast<const IMAGE_NT_HEADERS64*>(reinterpret_cast<const uint8_t*>(header) + header->e_lfanew);
+    const auto total_size = nt_header->OptionalHeader.SizeOfImage;
+
+    g_attribute_type_check_address = pattern::scan("0F 84 ? ? ? ? 8B 53 0C 48 8D 05 ? ? ? ? 48 89 45",
+        game_base,
+        total_size);
+
     std::stringstream ss;
-    ss << "[ScsUnitTypeCheckBypass] Found type check jump address @ &" << std::hex <<
+    ss << "[ScsUnitTypeCheckBypass 1.0.1] Found type check jump address @ &" << std::hex <<
         g_attribute_type_check_address << " "
         << (strcmp(version_params->common.game_id, "eut2") == 0 ? "eurotrucks2" : "amtrucks") << ".exe+"
         << (g_attribute_type_check_address - game_base);
@@ -69,11 +77,11 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
     if (!bypass_type_check())
     {
         version_params->common.log(SCS_LOG_TYPE_error,
-                                   "[ScsUnitTypeCheckBypass] Could not bypass attribute type check");
+                                   "[ScsUnitTypeCheckBypass 1.0.1] Could not bypass attribute type check");
         return SCS_RESULT_invalid_parameter;
     }
 
-    scs_log(SCS_LOG_TYPE_message, "[ScsUnitTypeCheckBypass] Plugin Loaded");
+    scs_log(SCS_LOG_TYPE_message, "[ScsUnitTypeCheckBypass 1.0.1] Plugin Loaded");
 
     return SCS_RESULT_ok;
 }
@@ -91,17 +99,5 @@ SCSAPI_VOID scs_telemetry_shutdown(void)
 
 BOOL __stdcall DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpReserved)
 {
-    if (dwReason == DLL_PROCESS_ATTACH)
-    {
-        game_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-        const auto header = reinterpret_cast<const IMAGE_DOS_HEADER*>(game_base);
-        const auto nt_header = reinterpret_cast<const IMAGE_NT_HEADERS64*>(reinterpret_cast<const uint8_t*>(header) + header->e_lfanew);
-        const auto total_size = nt_header->OptionalHeader.SizeOfImage;
-
-        g_attribute_type_check_address = pattern::scan("0F 84 ? ? ? ? 8B 53 0C 48 8D 4D E8 4C 89 65 F8",
-                                                       game_base,
-                                                       total_size);
-    }
-
     return TRUE;
 }
